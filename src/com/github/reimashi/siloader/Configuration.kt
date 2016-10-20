@@ -12,9 +12,9 @@ class Configuration {
     constructor() {
         this.cacheUrl = "redis://localhost"
 
-        this.dbUser = "dai"
-        this.dbPassword = "daipassword"
-        this.dbURL = "jdbc:mysql://localhost/hstestdb"
+        this.dbUser = "esei"
+        this.dbPassword = "eseipass"
+        this.dbURL = "jdbc:mysql://vega/work_si"
     }
 
     constructor(cacheUrl: String, dbUser: String, dbPassword: String, dbUrl: String) {

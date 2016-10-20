@@ -24,7 +24,7 @@ class DatabaseService(private val config: Configuration) {
     fun start() {
         if (this.connection == null) {
             this.connection = DriverManager.getConnection(
-                    this.config.dbURL,
+                    this.config.dbURL + "?useUnicode=true&serverTimezone=UTC",
                     this.config.dbUser,
                     this.config.dbPassword)
             log.log(Level.INFO, "Cliente DB iniciado. <" + this.config.dbURL + ">")

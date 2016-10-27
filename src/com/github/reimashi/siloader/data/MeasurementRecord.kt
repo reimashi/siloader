@@ -33,8 +33,9 @@ class MeasurementRecord : DatabaseObject {
 
     override fun getFields(): Map<String, Any?> {
         return hashMapOf(
-            "location" to location,
-            "time" to time,
+            "idAlert" to 1,
+            "idTime" to time,
+            "idLocation" to location,
             "elevation" to elevation,
             "temperature_surface" to temperature_surface,
             "temperature_500mb" to temperature_500mb,
@@ -63,6 +64,10 @@ class MeasurementRecord : DatabaseObject {
     }
 
     override fun getTable(): String {
-        return "time"
+        return "measurement"
+    }
+
+    override fun loadValues(values: Map<String, String?>) {
+        throw UnsupportedOperationException("not implemented")
     }
 }

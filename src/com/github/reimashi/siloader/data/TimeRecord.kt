@@ -34,4 +34,8 @@ class TimeRecord : DatabaseObject {
     override fun getTable(): String {
         return "time"
     }
+
+    override fun loadValues(values: Map<String, String?>) {
+        throw UnsupportedOperationException("not implemented")
+    }
 }

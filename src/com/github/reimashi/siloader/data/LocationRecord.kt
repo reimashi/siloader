@@ -2,9 +2,7 @@ package com.github.reimashi.siloader.data
 
 import com.github.reimashi.siloader.services.DatabaseObject
 
-class LocationRecord : DatabaseObject {
-    var latitude: Double = 0.0
-    var longitude: Double = 0.0
+data class LocationRecord(val latitude: Double = 0.0, val longitude: Double = 0.0) : DatabaseObject {
 
     override fun getFields(): Map<String, Any?> {
         return hashMapOf(
@@ -15,5 +13,9 @@ class LocationRecord : DatabaseObject {
 
     override fun getTable(): String {
         return "location"
+    }
+
+    override fun loadValues(values: Map<String, String?>) {
+        throw UnsupportedOperationException("not implemented")
     }
 }

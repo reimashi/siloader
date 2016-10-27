@@ -1,9 +1,7 @@
 package com.github.reimashi.siloader;
 
-import com.github.reimashi.siloader.data.MarineRecord
-import com.github.reimashi.siloader.data.WrfRecord
-import com.github.reimashi.siloader.data.Ww3Record
-import com.github.reimashi.siloader.services.CacheService
+import com.github.reimashi.siloader.data.*
+import com.github.reimashi.siloader.lang.SpatialPoint
 import com.github.reimashi.siloader.services.DatabaseService
 import ucar.ma2.ArrayDouble
 import ucar.ma2.ArrayFloat
@@ -20,9 +18,8 @@ class SILoaderMain {
     val log = Logger.getLogger("Main")
     val startTime: Date = SimpleDateFormat("dd/MM/yyyy hh:mm").parse("18/10/2016 00:00")
 
-    val config: Configuration = Configuration()
-    val cacheSrv: CacheService = CacheService(config)
-    val databaseSrv: DatabaseService = DatabaseService(config)
+    val warehouseDatabaseSrv: DatabaseService = DatabaseService(dbUrl = "vega", dbUser = "esei", dbPass = "eseipass", dbTable = "work_si")
+    val tmpDatabaseSrv: DatabaseService = DatabaseService(dbUrl = "vega", dbUser = "esei", dbPass = "eseipass", dbTable = "work_si_tmp")
 
     fun main(args: Array<String>) {
         val ww3Path: String = "ww3.nc"
@@ -33,17 +30,29 @@ class SILoaderMain {
         var wrfNcfile: NetcdfFile? = null
         var marineNcfile: NetcdfFile? = null
 
-        cacheSrv.start()
-        databaseSrv.start()
+        warehouseDatabaseSrv.start()
+        tmpDatabaseSrv.start()
 
         try {
             ww3Ncfile = NetcdfFile.openInMemory(ww3Path)
             wrfNcfile = NetcdfFile.openInMemory(wrfPath)
             marineNcfile = NetcdfFile.openInMemory(marinePath)
 
+            log.info("Limpiando base de datos temporal...")
+            tmpDatabaseSrv.truncate("wrf");
+            tmpDatabaseSrv.truncate("ww3");
+            tmpDatabaseSrv.truncate("marine");
+            log.info("Base de datos temporal limpiada con éxito!")
+
+            log.info("Cargando archivos a base de datos temporal...")
             loadWw3File(ww3Ncfile);
             loadWrfFile(wrfNcfile);
             loadMarineFile(marineNcfile);
+            log.info("Archivos cargados a base de datos temporal con éxito!")
+
+            log.info("Cargando archivos a base de datos temporal...")
+            loadData();
+            log.info("Datos cargados con éxito!")
         } catch (ioe: IOException) {
             log.severe("Error al abrir un fichero de entrada. " + ioe.message)
         } finally {
@@ -56,13 +65,13 @@ class SILoaderMain {
             }
         }
 
-        cacheSrv.stop()
-        databaseSrv.stop()
+        warehouseDatabaseSrv.stop()
+        tmpDatabaseSrv.stop()
     }
 
     fun loadWw3File(file: NetcdfFile) {
         log.info("Cargando el archivo WW3 a caché");
-
+var limit = 1000; // TODO: Quitar
         val latDim: Variable? = file.findVariable("lat")
         val lonDim: Variable? = file.findVariable("lon")
         val timeDim: Variable? = file.findVariable("time")
@@ -89,14 +98,16 @@ class SILoaderMain {
                 for (lonIndex in 0..(lonArray.size.toInt() - 1)) {
                     for (timeIndex in 0..(timeArray.size.toInt() - 1)) {
                         var newdate = Date(startTime.time + (timeArray[timeIndex] * 110)) // TODO: Revisar
-                        var record: Ww3Record = Ww3Record(latArray[latIndex].toDouble(), lonArray[lonIndex].toDouble(), newdate)
+                        var record: Ww3Record = Ww3Record(SpatialPoint(latArray[latIndex].toDouble(), lonArray[lonIndex].toDouble()), newdate)
 
                         record.dirm = dirmArray.get(timeIndex, latIndex, lonIndex).toDouble()
                         record.dirp = dirpArray.get(timeIndex, latIndex, lonIndex).toDouble()
                         record.tm_10 = tm10Array.get(timeIndex, latIndex, lonIndex).toDouble()
                         record.rtp = rtpArray.get(timeIndex, latIndex, lonIndex).toDouble()
 
-                        cacheSrv.setObject("ww3:" + record.getID(), record);
+                        tmpDatabaseSrv.insert(record);
+
+                        limit--; if (limit == 0) return; // TODO: Quitar
                     }
                 }
             }
@@ -110,6 +121,7 @@ class SILoaderMain {
 
     fun loadWrfFile(file: NetcdfFile) {
         log.info("Cargando el archivo WRF a caché");
+        var limit = 1000; // TODO: Quitar
 
         val xDim: Variable? = file.findVariable("x")
         val yDim: Variable? = file.findVariable("y")
@@ -168,7 +180,7 @@ class SILoaderMain {
                 for (yIndex in 0..(yArray.size.toInt() - 1)) {
                     for (timeIndex in 0..(timeArray.size.toInt() - 1)) {
                         var newdate = Date(startTime.time + (timeArray[timeIndex] * 165)) // TODO: Revisar
-                        var record: WrfRecord = WrfRecord(latArray.get(xIndex, yIndex).toDouble(), lonArray.get(xIndex, yIndex).toDouble(), newdate)
+                        var record: WrfRecord = WrfRecord(SpatialPoint(latArray.get(xIndex, yIndex).toDouble(), lonArray.get(xIndex, yIndex).toDouble()), newdate)
 
                         record.topo = topoArray.get(timeIndex, xIndex, yIndex).toDouble()
                         record.temp = tempArray.get(timeIndex, xIndex, yIndex).toDouble()
@@ -188,7 +200,9 @@ class SILoaderMain {
                         record.wind_lat = vArray.get(timeIndex, xIndex, yIndex).toDouble()
                         record.wind_gust = windgustArray.get(timeIndex, xIndex, yIndex).toDouble()
 
-                        cacheSrv.setObject("wrf:" + record.getID(), record);
+                        tmpDatabaseSrv.insert(record);
+
+                        limit--; if (limit == 0) return; // TODO: Quitar
                     }
                 }
             }
@@ -202,6 +216,7 @@ class SILoaderMain {
 
     fun loadMarineFile(file: NetcdfFile) {
         log.info("Cargando el archivo Marine a caché");
+        var limit = 1000; // TODO: Quitar
 
         val startTime: Date = SimpleDateFormat("yyyy-MM-dd hh:mm:ss").parse("1950-01-01 00:00:00")
 
@@ -230,13 +245,14 @@ class SILoaderMain {
                     for (timeIndex in 0..(timeArray.size.toInt() - 1)) {
                         for (depthIndex in 0..(depthArray.size.toInt() - 1)) {
                             var newdate = Date(startTime.time + (timeArray[timeIndex] * 60 * 60 * 1000).toLong())
-                            var record: MarineRecord = MarineRecord(latArray[latIndex].toDouble(), lonArray[lonIndex].toDouble(), newdate, depthArray[depthIndex].toDouble())
+                            var record: MarineRecord = MarineRecord(SpatialPoint(latArray[latIndex].toDouble(), lonArray[lonIndex].toDouble()), newdate, depthArray[depthIndex].toDouble())
 
                             record.u = uArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
                             record.v = vArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
                             record.salinity = salinityArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
 
-                            cacheSrv.setObject("marine:" + record.getID(), record);
+                            tmpDatabaseSrv.insert(record);
+                            limit--; if (limit == 0) return; // TODO: Quitar
                         }
                     }
                 }
@@ -246,6 +262,70 @@ class SILoaderMain {
         } else {
             log.severe("El archivo Marine tiene un formato incorrecto y no se ha podido cargar en caché")
             throw IOException("Format incorrect")
+        }
+    }
+
+    fun loadData() {
+        var dbIterator = tmpDatabaseSrv.selectIterator("wrf", WrfRecord());
+
+        if (dbIterator == null) {
+            log.severe("No hay elementos en la tabla wrf sobre los que iterar");
+            return;
+        }
+
+        while (dbIterator.hasNext()) {
+            val wrfRecord: WrfRecord = dbIterator.next()
+            val ww3Record: Ww3Record = tmpDatabaseSrv.selectNearby("ww3", wrfRecord.position, Ww3Record()) as Ww3Record
+            val marineRecord: MarineRecord = tmpDatabaseSrv.selectNearby("marine", wrfRecord.position, MarineRecord()) as MarineRecord
+
+            val timeDimension: TimeRecord = TimeRecord();
+            timeDimension.year = wrfRecord.time.year;
+            timeDimension.month = wrfRecord.time.month;
+            timeDimension.day = wrfRecord.time.date;
+            timeDimension.hour = wrfRecord.time.hours;
+            timeDimension.minute = wrfRecord.time.minutes;
+            timeDimension.second = wrfRecord.time.seconds;
+
+            val locationDimension: LocationRecord = LocationRecord(wrfRecord.position.latitude, wrfRecord.position.longitude);
+
+            val measurementTable: MeasurementRecord = MeasurementRecord();
+
+            measurementTable.time = timeDimension;
+            measurementTable.location = locationDimension;
+
+            measurementTable.cloud_cover_high = wrfRecord.chf;
+            measurementTable.cloud_cover_half = wrfRecord.cfm;
+            measurementTable.cloud_cover_low = wrfRecord.cfl;
+            measurementTable.visibility = wrfRecord.visibility;
+
+            measurementTable.elevation = wrfRecord.topo; // Mirar si de marine se puede quitar la del mar
+
+            measurementTable.temperature_sea_level = wrfRecord.sst;
+            measurementTable.temperature_surface = wrfRecord.temp;
+            measurementTable.temperature_500mb = wrfRecord.t500;
+            measurementTable.temperature_850mb = wrfRecord.t850;
+
+            measurementTable.salinity = marineRecord.salinity?.toDouble();
+            measurementTable.water_speed_eastward = marineRecord.v?.toDouble();
+            measurementTable.water_speed_northward = marineRecord.u?.toDouble();
+
+            measurementTable.wave_direction_mean = ww3Record.dirm;
+            measurementTable.wave_direction_peak = ww3Record.dirp;
+            measurementTable.wave_period_absolute = ww3Record.rtp;
+            measurementTable.wave_period_peak = ww3Record.tm_10;
+
+            measurementTable.snow_level = wrfRecord.snow_level;
+            measurementTable.snow_precipitation = wrfRecord.snow_prec;
+            measurementTable.rain_precipitation = wrfRecord.prec;
+
+            measurementTable.humidity = wrfRecord.humidity;
+
+            measurementTable.wind_direction = wrfRecord.wind_dir;
+            measurementTable.wind_lat = wrfRecord.wind_lat;
+            measurementTable.wind_lon = wrfRecord.wind_lon;
+            measurementTable.wind_gust = wrfRecord.wind_gust;
+
+            warehouseDatabaseSrv.insert(measurementTable);
         }
     }
 }

@@ -1,12 +1,12 @@
 package com.github.reimashi.siloader.data
 
-import java.io.Serializable
+import com.github.reimashi.siloader.lang.SpatialPoint
+import com.github.reimashi.siloader.services.DatabaseObject
+import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.*
 
-class WrfRecord(lat: Double, lon: Double, time: Date) : Serializable {
-    public val latitude: Double =  lat
-    public val longitude: Double = lon
-    public val time: Date = time
+class WrfRecord(var position: SpatialPoint = SpatialPoint.Null, var time: Date = Date.from(Instant.EPOCH)) : DatabaseObject {
 
     /**
      * Altura del terreno ?
@@ -102,31 +102,92 @@ class WrfRecord(lat: Double, lon: Double, time: Date) : Serializable {
         set(value) { if (value == -999.9000244140625) field = null else field = value }
 
     public fun getID(): String {
-        return latitude.toString() + "_" +
-                longitude.toString() + "_" +
+        return position.toString() + "_" +
                 time.time.toString()
     }
 
     override fun toString(): String {
-        return latitude.toString() + " " +
-                longitude.toString() + " " +
-                time.toString() + " " +
-                topo.toString() + " " +
-                temp.toString() + " " +
-                t500.toString() + " " +
-                t850.toString() + " " +
-                sst.toString() + " " +
-                chf.toString() + " " +
-                cfm.toString() + " " +
-                cfl.toString() + " " +
-                visibility.toString() + " " +
-                snow_level.toString() + " " +
-                snow_prec.toString() + " " +
-                prec.toString() + " " +
-                humidity.toString() + " " +
-                wind_dir.toString() + " " +
-                wind_lon.toString() + " " +
-                wind_lat.toString() + " " +
-                wind_gust.toString() + " "
+        return position.toString() + " " +
+            time.toString() + " " +
+            topo.toString() + " " +
+            temp.toString() + " " +
+            t500.toString() + " " +
+            t850.toString() + " " +
+            sst.toString() + " " +
+            chf.toString() + " " +
+            cfm.toString() + " " +
+            cfl.toString() + " " +
+            visibility.toString() + " " +
+            snow_level.toString() + " " +
+            snow_prec.toString() + " " +
+            prec.toString() + " " +
+            humidity.toString() + " " +
+            wind_dir.toString() + " " +
+            wind_lon.toString() + " " +
+            wind_lat.toString() + " " +
+            wind_gust.toString() + " "
+    }
+
+    override fun getFields(): Map<String, Any?> {
+        return hashMapOf(
+            "position" to position,
+            "time" to time,
+            "topo" to topo,
+            "temp" to temp,
+            "t500" to t500,
+            "t850" to t850,
+            "sst" to sst,
+            "chf" to chf,
+            "cfm" to cfm,
+            "cfl" to cfl,
+            "visibility" to visibility,
+            "snow_level" to snow_level,
+            "snow_prec" to snow_prec,
+            "prec" to prec,
+            "humidity" to humidity,
+            "wind_dir" to wind_dir,
+            "wind_lon" to wind_lon,
+            "wind_lat" to wind_lat,
+            "wind_gust" to wind_gust
+        )
+    }
+
+    override fun getTable(): String {
+        return "wrf"
+    }
+
+    override fun loadValues(values: Map<String, String?>) {
+        if (values.containsKey("latitude") && values.containsKey("longitude")) {
+            this.position = SpatialPoint(values.get("latitude")!!.toDouble(), values.get("longitude")!!.toDouble())
+        }
+
+        for ((key, value) in values) {
+            var tvalue = value;
+            if (value?.toLowerCase() == "null") tvalue = null;
+
+            when (key) {
+                "time" -> {
+                    val df = SimpleDateFormat("yyyy-MM-dd hh:mm:ss")
+                    this.time = df.parse(tvalue)
+                }
+                "topo" -> this.topo = tvalue?.toDouble()
+                "temp" -> this.temp = tvalue?.toDouble()
+                "t500" -> this.t500 = tvalue?.toDouble()
+                "t850" -> this.t850 = tvalue?.toDouble()
+                "sst" -> this.sst = tvalue?.toDouble()
+                "chf" -> this.chf = tvalue?.toDouble()
+                "cfm" -> this.cfm = tvalue?.toDouble()
+                "cfl" -> this.cfl = tvalue?.toDouble()
+                "visibility" -> this.visibility = tvalue?.toDouble()
+                "snow_level" -> this.snow_level = tvalue?.toDouble()
+                "snow_prec" -> this.snow_prec = tvalue?.toDouble()
+                "prec" -> this.prec = tvalue?.toDouble()
+                "humidity" -> this.humidity = tvalue?.toDouble()
+                "wind_dir" -> this.wind_dir = tvalue?.toDouble()
+                "wind_lon" -> this.wind_dir = tvalue?.toDouble()
+                "wind_lat" -> this.wind_dir = tvalue?.toDouble()
+                "wind_gust" -> this.wind_dir = tvalue?.toDouble()
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@ import com.github.reimashi.siloader.services.DatabaseObject
 class MeasurementRecord : DatabaseObject {
     var location: LocationRecord? = null
     var time: TimeRecord? = null
+    var alert: AlertRecord? = null
 
     var elevation: Double? = null
     var temperature_surface: Double? = null
@@ -33,7 +34,7 @@ class MeasurementRecord : DatabaseObject {
 
     override fun getFields(): Map<String, Any?> {
         return hashMapOf(
-            "idAlert" to 1,
+            "idAlert" to alert,
             "idTime" to time,
             "idLocation" to location,
             "elevation" to elevation,

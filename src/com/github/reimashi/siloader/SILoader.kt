@@ -69,9 +69,12 @@ class SILoaderMain {
         tmpDatabaseSrv.stop()
     }
 
+    /**
+     * Carga el dataset WW3 a la base de datos intermedia y trata los datos
+     */
     fun loadWw3File(file: NetcdfFile) {
         log.info("Cargando el archivo WW3 a caché");
-var limit = 1000; // TODO: Quitar
+
         val latDim: Variable? = file.findVariable("lat")
         val lonDim: Variable? = file.findVariable("lon")
         val timeDim: Variable? = file.findVariable("time")
@@ -106,8 +109,6 @@ var limit = 1000; // TODO: Quitar
                         record.rtp = rtpArray.get(timeIndex, latIndex, lonIndex).toDouble()
 
                         tmpDatabaseSrv.insert(record);
-
-                        limit--; if (limit == 0) return; // TODO: Quitar
                     }
                 }
             }
@@ -119,9 +120,11 @@ var limit = 1000; // TODO: Quitar
         }
     }
 
+    /**
+     * Carga el dataset WRF a la base de datos intermedia y trata los datos
+     */
     fun loadWrfFile(file: NetcdfFile) {
         log.info("Cargando el archivo WRF a caché");
-        var limit = 1000; // TODO: Quitar
 
         val xDim: Variable? = file.findVariable("x")
         val yDim: Variable? = file.findVariable("y")
@@ -201,8 +204,6 @@ var limit = 1000; // TODO: Quitar
                         record.wind_gust = windgustArray.get(timeIndex, xIndex, yIndex).toDouble()
 
                         tmpDatabaseSrv.insert(record);
-
-                        limit--; if (limit == 0) return; // TODO: Quitar
                     }
                 }
             }
@@ -214,9 +215,11 @@ var limit = 1000; // TODO: Quitar
         }
     }
 
+    /**
+     * Carga el dataset Marine a la base de datos intermedia y trata los datos
+     */
     fun loadMarineFile(file: NetcdfFile) {
         log.info("Cargando el archivo Marine a caché");
-        var limit = 1000; // TODO: Quitar
 
         val startTime: Date = SimpleDateFormat("yyyy-MM-dd hh:mm:ss").parse("1950-01-01 00:00:00")
 
@@ -252,7 +255,6 @@ var limit = 1000; // TODO: Quitar
                             record.salinity = salinityArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
 
                             tmpDatabaseSrv.insert(record);
-                            limit--; if (limit == 0) return; // TODO: Quitar
                         }
                     }
                 }
@@ -265,6 +267,9 @@ var limit = 1000; // TODO: Quitar
         }
     }
 
+    /**
+     * Carga los datos de la base de datos intermedia a la base de datos principal
+     */
     fun loadData() {
         var dbIterator = tmpDatabaseSrv.selectIterator("wrf", WrfRecord());
 
@@ -273,11 +278,14 @@ var limit = 1000; // TODO: Quitar
             return;
         }
 
+        // Mientras siga habiendo datos en la base de datos intermedia
         while (dbIterator.hasNext()) {
+            // Se obtienen los datos para la coordenada/tiempo actual
             val wrfRecord: WrfRecord = dbIterator.next()
             val ww3Record: Ww3Record = tmpDatabaseSrv.selectNearby("ww3", wrfRecord.position, Ww3Record()) as Ww3Record
             val marineRecord: MarineRecord = tmpDatabaseSrv.selectNearby("marine", wrfRecord.position, MarineRecord()) as MarineRecord
 
+            // Se crea la dimension del tiempo
             val timeDimension: TimeRecord = TimeRecord();
             timeDimension.year = wrfRecord.time.year;
             timeDimension.month = wrfRecord.time.month;
@@ -286,19 +294,31 @@ var limit = 1000; // TODO: Quitar
             timeDimension.minute = wrfRecord.time.minutes;
             timeDimension.second = wrfRecord.time.seconds;
 
+            // Se crea la dimension de la posición
             val locationDimension: LocationRecord = LocationRecord(wrfRecord.position.latitude, wrfRecord.position.longitude);
 
+            // Se crea la dimension de las alertas
+            val alertDimension: AlertRecord = AlertRecord();
+            if (wrfRecord.temp!! > 41.0) alertDimension.temperature_high = true
+            else if (wrfRecord.temp!! > 38.0) alertDimension.temperature_half = true
+            else if (wrfRecord.temp!! > 35.0) alertDimension.temperature_low = true
+            if (wrfRecord.prec!! > 120.0) alertDimension.rain_high = true
+            else if (wrfRecord.prec!! > 80.0) alertDimension.rain_half = true
+            else if (wrfRecord.prec!! > 40.0) alertDimension.rain_low = true
+
+            // Se crea la clase principal
             val measurementTable: MeasurementRecord = MeasurementRecord();
 
             measurementTable.time = timeDimension;
             measurementTable.location = locationDimension;
+            measurementTable.alert = alertDimension;
 
             measurementTable.cloud_cover_high = wrfRecord.chf;
             measurementTable.cloud_cover_half = wrfRecord.cfm;
             measurementTable.cloud_cover_low = wrfRecord.cfl;
             measurementTable.visibility = wrfRecord.visibility;
 
-            measurementTable.elevation = wrfRecord.topo; // Mirar si de marine se puede quitar la del mar
+            measurementTable.elevation = wrfRecord.topo;
 
             measurementTable.temperature_sea_level = wrfRecord.sst;
             measurementTable.temperature_surface = wrfRecord.temp;
@@ -325,6 +345,7 @@ var limit = 1000; // TODO: Quitar
             measurementTable.wind_lon = wrfRecord.wind_lon;
             measurementTable.wind_gust = wrfRecord.wind_gust;
 
+            // Se guarda el registro actual en la base de datos
             warehouseDatabaseSrv.insert(measurementTable);
         }
     }

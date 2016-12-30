@@ -3,6 +3,9 @@ package com.github.reimashi.siloader;
 import com.github.reimashi.siloader.data.*
 import com.github.reimashi.siloader.lang.SpatialPoint
 import com.github.reimashi.siloader.services.DatabaseService
+import org.kohsuke.args4j.CmdLineException
+import org.kohsuke.args4j.CmdLineParser
+import org.kohsuke.args4j.Option
 import ucar.ma2.ArrayDouble
 import ucar.ma2.ArrayFloat
 import ucar.ma2.ArrayInt
@@ -11,62 +14,125 @@ import ucar.nc2.NetcdfFile
 import ucar.nc2.Variable
 import java.io.IOException
 import java.text.SimpleDateFormat
+import java.time.LocalDateTime
 import java.util.*
 import java.util.logging.Logger
 
 class SILoaderMain {
     val log = Logger.getLogger("Main")
-    val startTime: Date = SimpleDateFormat("dd/MM/yyyy hh:mm").parse("18/10/2016 00:00")
+    var startTime: Date? = null
 
-    val warehouseDatabaseSrv: DatabaseService = DatabaseService(dbUrl = "vega", dbUser = "esei", dbPass = "eseipass", dbTable = "work_si")
-    val tmpDatabaseSrv: DatabaseService = DatabaseService(dbUrl = "vega", dbUser = "esei", dbPass = "eseipass", dbTable = "work_si_tmp")
+    var warehouseDatabaseSrv: DatabaseService? = null
+    var tmpDatabaseSrv: DatabaseService? = null
+
+    @Option(name = "-h", usage = "Muestra la ayuda")
+    private var showHelp: Boolean = true
+
+    @Option(name = "-s12", usage = "Los datos comenzarán las 12:00 en lugar de a las 00:00")
+    private var skipTwelve: Boolean = false
+
+    @Option(name = "-d", usage = "Fecha en formato dd/mm/aaaa de los datos a insertar")
+    private var date: String? = LocalDateTime.now().dayOfMonth.toString() + "/" + LocalDateTime.now().monthValue.toString() + "/" + LocalDateTime.now().year.toString();
+
+    @Option(name = "-wrf", usage = "Ruta del dataset WRF, en formato NetCDF")
+    private var wrfPath: String? = "wrf.nc4"
+
+    @Option(name = "-ww3", usage = "Ruta del dataset WW3, en formato NetCDF")
+    private var ww3Path: String? = "ww3.nc"
+
+    @Option(name = "-marine", usage = "Ruta del dataset Marine, en formato NetCDF")
+    private var marinePath: String? = "marine.nc"
+
+    @Option(name = "-dbUrl", usage = "URL de la base de datos MySQL")
+    private var dbUrl: String? = "localhost"
+
+    @Option(name = "-dbUser", usage = "Usuario de la base de datos MySQL")
+    private var dbUser: String? = "esei"
+
+    @Option(name = "-dbPass", usage = "Contraseña de la base de datos MySQL")
+    private var dbPass: String? = "eseipass"
+
+    @Option(name = "-dbTmpName", usage = "Nombre de la base de datos intermedia")
+    private var dbTmpName: String? = "work_si_tmp"
+
+    @Option(name = "-dbWarehouseName", usage = "Nombre de la base de datos del datawarehouse")
+    private var dbWarehouseName: String? = "work_si"
 
     fun main(args: Array<String>) {
-        val ww3Path: String = "ww3.nc"
-        val wrfPath: String = "wrf.nc4"
-        val marinePath: String = "marine.nc"
-
-        var ww3Ncfile: NetcdfFile? = null
-        var wrfNcfile: NetcdfFile? = null
-        var marineNcfile: NetcdfFile? = null
-
-        warehouseDatabaseSrv.start()
-        tmpDatabaseSrv.start()
+        val parser = CmdLineParser(this)
 
         try {
-            ww3Ncfile = NetcdfFile.openInMemory(ww3Path)
-            wrfNcfile = NetcdfFile.openInMemory(wrfPath)
-            marineNcfile = NetcdfFile.openInMemory(marinePath)
+            parser.parseArgument(HashSet(args.asList()))
 
-            log.info("Limpiando base de datos temporal...")
-            tmpDatabaseSrv.truncate("wrf");
-            tmpDatabaseSrv.truncate("ww3");
-            tmpDatabaseSrv.truncate("marine");
-            log.info("Base de datos temporal limpiada con éxito!")
-
-            log.info("Cargando archivos a base de datos temporal...")
-            loadWw3File(ww3Ncfile);
-            loadWrfFile(wrfNcfile);
-            loadMarineFile(marineNcfile);
-            log.info("Archivos cargados a base de datos temporal con éxito!")
-
-            log.info("Cargando archivos a base de datos temporal...")
-            loadData();
-            log.info("Datos cargados con éxito!")
-        } catch (ioe: IOException) {
-            log.severe("Error al abrir un fichero de entrada. " + ioe.message)
-        } finally {
             try {
-                ww3Ncfile?.close()
-                wrfNcfile?.close()
-                marineNcfile?.close()
-            } catch (ioe: IOException) {
-                log.severe("Error al cerrar los ficheros de entrada. " + ioe.message)
-            }
-        }
+                val dateParser = SimpleDateFormat("dd/MM/yyyy")
+                this.startTime = dateParser.parse(this.date)
 
-        warehouseDatabaseSrv.stop()
-        tmpDatabaseSrv.stop()
+                if (this.skipTwelve) {
+                    val cal = Calendar.getInstance()
+                    cal.time = this.startTime
+                    cal.add(Calendar.HOUR, 12)
+                    this.startTime = cal.time
+                }
+            } catch(e: NullPointerException) {
+                log.severe("No se ha podido parsear el parametro de fecha. " + e.message)
+            }
+
+            if (this.showHelp) {
+                parser.printUsage(System.out);
+            }
+            else if (this.startTime == null) {
+                log.severe("No se ha podido determinar la fecha de los dataset. Se debe especificar una fecha valida mediante el parametro -d.");
+            }
+            else if (this.dbUrl != null && this.dbUser != null && this.dbPass != null && this.dbTmpName != null && this.dbWarehouseName != null) {
+                warehouseDatabaseSrv = DatabaseService(dbUrl = this.dbUrl!!, dbUser = this.dbUser!!, dbPass = this.dbPass!!, dbTable = this.dbWarehouseName!!)
+                tmpDatabaseSrv = DatabaseService(dbUrl = this.dbUrl!!, dbUser = this.dbUser!!, dbPass = this.dbPass!!, dbTable = this.dbTmpName!!)
+
+                var ww3Ncfile: NetcdfFile? = null
+                var wrfNcfile: NetcdfFile? = null
+                var marineNcfile: NetcdfFile? = null
+
+                warehouseDatabaseSrv!!.start()
+                tmpDatabaseSrv!!.start()
+
+                try {
+                    ww3Ncfile = NetcdfFile.openInMemory(ww3Path)
+                    wrfNcfile = NetcdfFile.openInMemory(wrfPath)
+                    marineNcfile = NetcdfFile.openInMemory(marinePath)
+
+                    log.info("Limpiando base de datos temporal...")
+                    tmpDatabaseSrv!!.truncate("wrf");
+                    tmpDatabaseSrv!!.truncate("ww3");
+                    tmpDatabaseSrv!!.truncate("marine");
+                    log.info("Base de datos temporal limpiada con éxito!")
+
+                    log.info("Cargando archivos a base de datos temporal...")
+                    loadWw3File(ww3Ncfile);
+                    loadWrfFile(wrfNcfile);
+                    loadMarineFile(marineNcfile);
+                    log.info("Archivos cargados a base de datos temporal con éxito!")
+
+                    log.info("Cargando archivos a base de datos temporal...")
+                    loadData();
+                    log.info("Datos cargados con éxito!")
+                } catch (ioe: IOException) {
+                    log.severe("Error al abrir un fichero de entrada. " + ioe.message)
+                } finally {
+                    try {
+                        ww3Ncfile?.close()
+                        wrfNcfile?.close()
+                        marineNcfile?.close()
+                    } catch (ioe: IOException) {
+                        log.severe("Error al cerrar los ficheros de entrada. " + ioe.message)
+                    }
+                }
+
+                warehouseDatabaseSrv!!.stop()
+                tmpDatabaseSrv!!.stop()
+            }
+        } catch(e: CmdLineException) {
+            log.severe("No se han podido parsear los parametros. " + e.message)
+        }
     }
 
     /**
@@ -100,7 +166,7 @@ class SILoaderMain {
             for (latIndex in 0..(latArray.size.toInt() - 1)) {
                 for (lonIndex in 0..(lonArray.size.toInt() - 1)) {
                     for (timeIndex in 0..(timeArray.size.toInt() - 1)) {
-                        var newdate = Date(startTime.time + (timeArray[timeIndex] * 110)) // TODO: Revisar
+                        var newdate = Date(startTime!!.time + (timeArray[timeIndex] * 110)) // TODO: Revisar
                         var record: Ww3Record = Ww3Record(SpatialPoint(latArray[latIndex].toDouble(), lonArray[lonIndex].toDouble()), newdate)
 
                         record.dirm = dirmArray.get(timeIndex, latIndex, lonIndex).toDouble()
@@ -108,7 +174,7 @@ class SILoaderMain {
                         record.tm_10 = tm10Array.get(timeIndex, latIndex, lonIndex).toDouble()
                         record.rtp = rtpArray.get(timeIndex, latIndex, lonIndex).toDouble()
 
-                        tmpDatabaseSrv.insert(record);
+                        tmpDatabaseSrv!!.insert(record);
                     }
                 }
             }
@@ -182,7 +248,7 @@ class SILoaderMain {
             for (xIndex in 0..(xArray.size.toInt() - 1)) {
                 for (yIndex in 0..(yArray.size.toInt() - 1)) {
                     for (timeIndex in 0..(timeArray.size.toInt() - 1)) {
-                        var newdate = Date(startTime.time + (timeArray[timeIndex] * 165)) // TODO: Revisar
+                        var newdate = Date(startTime!!.time + (timeArray[timeIndex] * 165)) // TODO: Revisar
                         var record: WrfRecord = WrfRecord(SpatialPoint(latArray.get(xIndex, yIndex).toDouble(), lonArray.get(xIndex, yIndex).toDouble()), newdate)
 
                         record.topo = topoArray.get(timeIndex, xIndex, yIndex).toDouble()
@@ -203,7 +269,7 @@ class SILoaderMain {
                         record.wind_lat = vArray.get(timeIndex, xIndex, yIndex).toDouble()
                         record.wind_gust = windgustArray.get(timeIndex, xIndex, yIndex).toDouble()
 
-                        tmpDatabaseSrv.insert(record);
+                        tmpDatabaseSrv!!.insert(record);
                     }
                 }
             }
@@ -254,7 +320,7 @@ class SILoaderMain {
                             record.v = vArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
                             record.salinity = salinityArray.get(timeIndex, depthIndex, latIndex, lonIndex).toInt()
 
-                            tmpDatabaseSrv.insert(record);
+                            tmpDatabaseSrv!!.insert(record);
                         }
                     }
                 }
@@ -271,7 +337,7 @@ class SILoaderMain {
      * Carga los datos de la base de datos intermedia a la base de datos principal
      */
     fun loadData() {
-        var dbIterator = tmpDatabaseSrv.selectIterator("wrf", WrfRecord());
+        var dbIterator = tmpDatabaseSrv!!.selectIterator("wrf", WrfRecord());
 
         if (dbIterator == null) {
             log.severe("No hay elementos en la tabla wrf sobre los que iterar");
@@ -282,8 +348,8 @@ class SILoaderMain {
         while (dbIterator.hasNext()) {
             // Se obtienen los datos para la coordenada/tiempo actual
             val wrfRecord: WrfRecord = dbIterator.next()
-            val ww3Record: Ww3Record = tmpDatabaseSrv.selectNearby("ww3", wrfRecord.position, Ww3Record()) as Ww3Record
-            val marineRecord: MarineRecord = tmpDatabaseSrv.selectNearby("marine", wrfRecord.position, MarineRecord()) as MarineRecord
+            val ww3Record: Ww3Record = tmpDatabaseSrv!!.selectNearby("ww3", wrfRecord.position, Ww3Record()) as Ww3Record
+            val marineRecord: MarineRecord = tmpDatabaseSrv!!.selectNearby("marine", wrfRecord.position, MarineRecord()) as MarineRecord
 
             // Se crea la dimension del tiempo
             val timeDimension: TimeRecord = TimeRecord();
@@ -346,7 +412,7 @@ class SILoaderMain {
             measurementTable.wind_gust = wrfRecord.wind_gust;
 
             // Se guarda el registro actual en la base de datos
-            warehouseDatabaseSrv.insert(measurementTable);
+            warehouseDatabaseSrv!!.insert(measurementTable);
         }
     }
 }

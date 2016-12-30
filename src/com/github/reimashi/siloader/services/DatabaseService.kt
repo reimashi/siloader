@@ -46,11 +46,13 @@ class DatabaseService(dbUrl: String = "localhost", dbUser: String, dbPass: Strin
         private val log = Logger.getLogger(DatabaseService::class.java.name)
     }
 
-    fun selectNearby(table: String, sp: SpatialPoint, bean: DatabaseObject): DatabaseObject {
+    fun selectNearby(table: String, sp: SpatialPoint, dt: Date, bean: DatabaseObject): DatabaseObject {
         var lat = sp.latitude;
         var lng = sp.longitude;
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+        val regTime: String = sdf.format(dt)
 
-        var query: String = "SELECT *, X(position) AS latitude, Y(position) AS longitude, (3959*acos(cos(radians(78.3232))*cos(radians($lat))*cos(radians($lng)-radians(65.3234))+sin(radians(78.3232))*sin(radians($lat)))) AS distance FROM $table ORDER BY distance LIMIT 1;"
+        var query: String = "SELECT *, X(position) AS latitude, Y(position) AS longitude, (3959*acos(cos(radians(78.3232))*cos(radians($lat))*cos(radians($lng)-radians(65.3234))+sin(radians(78.3232))*sin(radians($lat)))) AS distance FROM $table WHERE time > $regTime ORDER BY distance, time LIMIT 1;"
         val ps = this.connection?.prepareStatement(query)
         val result: ResultSet = ps!!.executeQuery()
 

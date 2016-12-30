@@ -26,7 +26,7 @@ class SILoaderMain {
     var tmpDatabaseSrv: DatabaseService? = null
 
     @Option(name = "-h", usage = "Muestra la ayuda")
-    private var showHelp: Boolean = true
+    private var showHelp: Boolean = false
 
     @Option(name = "-s12", usage = "Los datos comenzarán las 12:00 en lugar de a las 00:00")
     private var skipTwelve: Boolean = false
@@ -348,8 +348,8 @@ class SILoaderMain {
         while (dbIterator.hasNext()) {
             // Se obtienen los datos para la coordenada/tiempo actual
             val wrfRecord: WrfRecord = dbIterator.next()
-            val ww3Record: Ww3Record = tmpDatabaseSrv!!.selectNearby("ww3", wrfRecord.position, Ww3Record()) as Ww3Record
-            val marineRecord: MarineRecord = tmpDatabaseSrv!!.selectNearby("marine", wrfRecord.position, MarineRecord()) as MarineRecord
+            val ww3Record: Ww3Record = tmpDatabaseSrv!!.selectNearby("ww3", wrfRecord.position, wrfRecord.time, Ww3Record()) as Ww3Record
+            val marineRecord: MarineRecord = tmpDatabaseSrv!!.selectNearby("marine", wrfRecord.position, wrfRecord.time, MarineRecord()) as MarineRecord
 
             // Se crea la dimension del tiempo
             val timeDimension: TimeRecord = TimeRecord();
